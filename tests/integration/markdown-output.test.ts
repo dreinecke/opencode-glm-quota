@@ -3,16 +3,11 @@ import * as assert from 'node:assert'
 import { EventEmitter } from 'node:events'
 import type { RequestOptions } from 'node:https'
 import { createRequire, syncBuiltinESMExports } from 'node:module'
-import { GlmQuotaPlugin } from '../../src/index.js'
+import { loadPlugin, runQuotaTool } from '../helpers/load-plugin.js'
 
 const require = createRequire(import.meta.url)
 const https = require('node:https') as typeof import('node:https')
 const fs = require('node:fs') as typeof import('node:fs')
-
-type PluginContext = Parameters<typeof GlmQuotaPlugin>[0]
-type ToolExecutor = {
-  execute: (args?: Record<string, unknown>, context?: Record<string, unknown>) => Promise<string> | string
-}
 
 type MockResponse = {
   statusCode: number
@@ -122,8 +117,7 @@ describe('Integration: Markdown Output', () => {
     syncBuiltinESMExports()
 
     try {
-      const plugin = await GlmQuotaPlugin({} as unknown as PluginContext)
-      const result = await (plugin.tool!.glm_quota as unknown as ToolExecutor).execute()
+      const result = await runQuotaTool(await loadPlugin())
 
       assert.ok(result.includes('### 📊 Z.ai GLM Coding Plan — Pro'))
       assert.ok(result.includes('- **Platform**: Z.AI'))
@@ -164,8 +158,7 @@ describe('Integration: Markdown Output', () => {
     delete process.env.ZHIPUAI_API_KEY
 
     try {
-      const plugin = await GlmQuotaPlugin({} as unknown as PluginContext)
-      const result = await (plugin.tool!.glm_quota as unknown as ToolExecutor).execute()
+      const result = await runQuotaTool(await loadPlugin())
 
       assert.ok(result.startsWith('### ⚠️ '), 'Credential error should start with a Markdown title')
       assert.ok(result.includes('Please authenticate first'))

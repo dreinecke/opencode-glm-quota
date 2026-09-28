@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 
 /**
- * GLM Quota Plugin Installer
+ * GLM Quota Plugin Installer (OpenCode v2)
  *
- * This script installs the GLM Quota Plugin integration files into the user's
- * OpenCode configuration directory (~/.config/opencode/).
+ * The plugin registers its tool, /glm_quota command, and skill natively
+ * through the v2 plugin API, so installation only requires adding the
+ * package to the `plugins` array in the OpenCode config.
+ *
+ * This script also removes integration files copied by the v1 installer
+ * (command, agent, and skill markdown) when upgrading.
  *
  * Usage:
- *   node bin/install.js              # Interactive install (ask before overwriting)
- *   node bin/install.js --force      # Force overwrite existing files
- *   node bin/install.js uninstall    # Remove integration files and config
+ *   node bin/install.js              # Install (update plugins config)
+ *   node bin/install.js uninstall    # Remove config entry and package
  */
 
 import * as fs from 'fs'
@@ -23,17 +26,21 @@ import { parse as parseJsonc } from 'jsonc-parser'
 // CONSTANTS
 // ==========================================
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-const SOURCE_DIR = path.join(__dirname, '..', 'integration')
-const COMMAND_FILE = path.join(SOURCE_DIR, 'command', 'glm_quota.md')
-const SKILL_FILE = path.join(SOURCE_DIR, 'skills', 'glm-quota', 'SKILL.md')
-const AGENT_FILE = path.join(SOURCE_DIR, 'agents', 'glm-quota-exec.md')
+const PLUGIN_NAME = 'opencode-glm-quota'
 
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode')
-const TARGET_COMMAND = path.join(CONFIG_DIR, 'command', 'glm_quota.md')
-const TARGET_SKILL = path.join(CONFIG_DIR, 'skills', 'glm-quota', 'SKILL.md')
-const TARGET_AGENT = path.join(CONFIG_DIR, 'agents', 'glm-quota-exec.md')
+
+// Integration files written by the v1 installer; safe to remove on upgrade
+// because the v2 plugin registers the command, agent-free flow, and skill
+// natively via plugin transforms.
+const LEGACY_V1_FILES = [
+  path.join(CONFIG_DIR, 'command', 'glm_quota.md'),
+  path.join(CONFIG_DIR, 'agents', 'glm-quota-exec.md'),
+  path.join(CONFIG_DIR, 'skills', 'glm-quota', 'SKILL.md')
+]
+const LEGACY_V1_DIRS = [
+  path.join(CONFIG_DIR, 'skills', 'glm-quota')
+]
 
 // Check which config file exists (opencode.json or opencode.jsonc)
 const TARGET_CONFIG_JSON = path.join(CONFIG_DIR, 'opencode.json')
@@ -53,27 +60,10 @@ if (fileExists(TARGET_CONFIG_JSON)) {
 // ==========================================
 
 /**
- * Ensure directory exists, create if missing
- */
-function ensureDirectory(dirPath) {
-  if (!fs.existsSync(dirPath)) {
-    fs.mkdirSync(dirPath, { recursive: true })
-  }
-}
-
-/**
  * Check if file exists
  */
 function fileExists(filePath) {
   return fs.existsSync(filePath)
-}
-
-/**
- * Copy file from source to destination
- */
-function copyFile(source, destination) {
-  ensureDirectory(path.dirname(destination))
-  fs.copyFileSync(source, destination)
 }
 
 /**
@@ -83,8 +73,6 @@ function removeFile(filePath, label) {
   if (fileExists(filePath)) {
     fs.unlinkSync(filePath)
     console.log(`  ✓ Removed ${label}`)
-  } else {
-    console.log(`  ⊙ Not found ${label}`)
   }
 }
 
@@ -95,8 +83,6 @@ function removeDirectory(dirPath, label) {
   if (fileExists(dirPath)) {
     fs.rmSync(dirPath, { recursive: true, force: true })
     console.log(`  ✓ Removed ${label}`)
-  } else {
-    console.log(`  ⊙ Not found ${label}`)
   }
 }
 
@@ -116,36 +102,10 @@ function parseConfig(filePath) {
  * Write JSON file
  */
 function writeConfig(filePath, data) {
-  ensureDirectory(path.dirname(filePath))
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
   const json = JSON.stringify(data, null, 2) + '\n'
   fs.writeFileSync(filePath, json)
   console.log(`  ✓ Wrote ${filePath} (${json.length} bytes)`)
-}
-
-/**
- * Deep merge objects
- */
-function deepMerge(target, source) {
-  const result = { ...target }
-
-  for (const key of Object.keys(source)) {
-    if (source[key] instanceof Object && key in result && result[key] instanceof Object) {
-      result[key] = deepMerge(result[key], source[key])
-    } else {
-      result[key] = source[key]
-    }
-  }
-
-  return result
-}
-
-/**
- * Prompt user for confirmation
- */
-function promptConfirm(message) {
-  process.stdout.write(`${message} (y/N) `)
-  const response = process.stdin.read()
-  return response?.trim().toLowerCase() === 'y'
 }
 
 // ==========================================
@@ -153,52 +113,22 @@ function promptConfirm(message) {
 // ==========================================
 
 /**
- * Install command file
+ * Remove integration files copied by the v1 installer
  */
-function installCommand(force) {
-  if (fileExists(TARGET_COMMAND) && !force) {
-    if (!promptConfirm(`Command file exists: ${TARGET_COMMAND}\nOverwrite?`)) {
-      console.log(`  ⊘ Skipped ${TARGET_COMMAND}`)
-      return
-    }
+function removeLegacyV1Files() {
+  for (const file of LEGACY_V1_FILES) {
+    removeFile(file, `v1 file ${path.relative(CONFIG_DIR, file)}`)
   }
-
-  copyFile(COMMAND_FILE, TARGET_COMMAND)
-  console.log(`  ✓ Created ${TARGET_COMMAND}`)
+  for (const dir of LEGACY_V1_DIRS) {
+    removeDirectory(dir, `v1 directory ${path.relative(CONFIG_DIR, dir)}`)
+  }
 }
 
 /**
- * Install skill file
- */
-function installSkill(force) {
-  if (fileExists(TARGET_SKILL) && !force) {
-    if (!promptConfirm(`Skill directory exists: ${path.dirname(TARGET_SKILL)}\nOverwrite?`)) {
-      console.log(`  ⊘ Skipped ${TARGET_SKILL}`)
-      return
-    }
-  }
-
-  copyFile(SKILL_FILE, TARGET_SKILL)
-  console.log(`  ✓ Created ${path.join(path.basename(path.dirname(TARGET_SKILL)), path.basename(TARGET_SKILL))}`)
-}
-
-/**
- * Install agent file
- */
-function installAgent(force) {
-  if (fileExists(TARGET_AGENT) && !force) {
-    if (!promptConfirm(`Agent file exists: ${TARGET_AGENT}\nOverwrite?`)) {
-      console.log(`  ⊘ Skipped ${TARGET_AGENT}`)
-      return
-    }
-  }
-
-  copyFile(AGENT_FILE, TARGET_AGENT)
-  console.log(`  ✓ Created ${TARGET_AGENT}`)
-}
-
-/**
- * Update plugin configuration and cleanup old JSON agent
+ * Update plugin configuration:
+ * - add the package to the v2 `plugins` array
+ * - migrate a v1 `plugin` array to `plugins`
+ * - drop a stale v1 JSON agent entry if present
  */
 function updatePluginConfig() {
   // Parse existing config if it exists
@@ -207,40 +137,38 @@ function updatePluginConfig() {
     existingConfig = parseConfig(TARGET_CONFIG)
   }
 
-  const PLUGIN_NAME = 'opencode-glm-quota'
-
   // CLEANUP: Remove old JSON agent config if it exists (migration from v1.3.x)
   if (existingConfig.agent && existingConfig.agent['glm-quota-exec']) {
     delete existingConfig.agent['glm-quota-exec']
     if (Object.keys(existingConfig.agent).length === 0) {
       delete existingConfig.agent
     }
-    console.log('  ✓ Removed old JSON agent config (migrated to Markdown)')
+    console.log('  ✓ Removed old JSON agent config')
   }
 
-  // OpenCode config key is "plugin" (singular). Migrate legacy "plugins" entries.
-  const plugin = Array.isArray(existingConfig.plugin) ? [...existingConfig.plugin] : []
-  const legacyPlugins = Array.isArray(existingConfig.plugins) ? existingConfig.plugins : []
+  // OpenCode v2 config key is "plugins". Migrate v1 "plugin" entries.
+  const plugins = Array.isArray(existingConfig.plugins) ? [...existingConfig.plugins] : []
+  const legacyPlugin = Array.isArray(existingConfig.plugin) ? existingConfig.plugin : []
 
-  if (legacyPlugins.length > 0) {
-    for (const name of legacyPlugins) {
-      if (typeof name === 'string' && !plugin.includes(name)) {
-        plugin.push(name)
+  if (legacyPlugin.length > 0) {
+    for (const name of legacyPlugin) {
+      if (typeof name === 'string' && !plugins.includes(name)) {
+        plugins.push(name)
       }
     }
-    delete existingConfig.plugins
-    console.log('  ✓ Migrated legacy plugins array to plugin')
+    delete existingConfig.plugin
+    console.log('  ✓ Migrated v1 plugin array to plugins')
   }
 
   // Only add if not already present
-  if (!plugin.includes(PLUGIN_NAME)) {
-    plugin.push(PLUGIN_NAME)
-    console.log(`  ✓ Added ${PLUGIN_NAME} to plugin array`)
+  if (!plugins.includes(PLUGIN_NAME)) {
+    plugins.push(PLUGIN_NAME)
+    console.log(`  ✓ Added ${PLUGIN_NAME} to plugins array`)
   } else {
-    console.log(`  ⊙ Plugin ${PLUGIN_NAME} already in plugin array`)
+    console.log(`  ⊙ Plugin ${PLUGIN_NAME} already in plugins array`)
   }
 
-  existingConfig.plugin = plugin
+  existingConfig.plugins = plugins
 
   // Write config back to same file (opencode.json or opencode.jsonc)
   writeConfig(TARGET_CONFIG, existingConfig)
@@ -248,7 +176,7 @@ function updatePluginConfig() {
 }
 
 /**
- * Remove plugin configuration and agent configuration
+ * Remove plugin configuration
  */
 function removeConfig() {
   if (!fileExists(TARGET_CONFIG)) {
@@ -256,25 +184,21 @@ function removeConfig() {
     return
   }
 
-  const PLUGIN_NAME = 'opencode-glm-quota'
   const existingConfig = parseConfig(TARGET_CONFIG)
   let changed = false
 
-  if (Array.isArray(existingConfig.plugin)) {
-    const next = existingConfig.plugin.filter((name) => name !== PLUGIN_NAME)
-    if (next.length !== existingConfig.plugin.length) {
-      existingConfig.plugin = next
-      changed = true
-      console.log('  ✓ Removed plugin from plugin array')
-    }
-  }
-
-  if (Array.isArray(existingConfig.plugins)) {
-    const next = existingConfig.plugins.filter((name) => name !== PLUGIN_NAME)
-    if (next.length !== existingConfig.plugins.length) {
-      existingConfig.plugins = next
-      changed = true
-      console.log('  ✓ Removed plugin from plugins array')
+  for (const key of ['plugins', 'plugin']) {
+    if (Array.isArray(existingConfig[key])) {
+      const next = existingConfig[key].filter((name) => name !== PLUGIN_NAME)
+      if (next.length !== existingConfig[key].length) {
+        if (next.length === 0) {
+          delete existingConfig[key]
+        } else {
+          existingConfig[key] = next
+        }
+        changed = true
+        console.log(`  ✓ Removed plugin from ${key} array`)
+      }
     }
   }
 
@@ -299,7 +223,7 @@ function removeConfig() {
  * Remove npm package
  */
 function removePackage(globalFlag) {
-  const args = ['remove', 'opencode-glm-quota']
+  const args = ['remove', PLUGIN_NAME]
   if (globalFlag) {
     args.push('--global')
   }
@@ -311,12 +235,10 @@ function removePackage(globalFlag) {
 }
 
 /**
- * Uninstall integration files and configuration
+ * Uninstall configuration and package
  */
 function uninstall(globalFlag) {
-  removeFile(TARGET_COMMAND, TARGET_COMMAND)
-  removeDirectory(path.dirname(TARGET_SKILL), path.dirname(TARGET_SKILL))
-  removeFile(TARGET_AGENT, TARGET_AGENT)
+  removeLegacyV1Files()
   removeConfig()
   removePackage(globalFlag)
 }
@@ -333,7 +255,6 @@ function main() {
     // Parse command line arguments
     const args = process.argv.slice(2)
     const isUninstall = args.includes('uninstall')
-    const forceFlag = args.includes('--force')
     const globalFlag = args.includes('--global') || args.includes('-g')
 
     if (isUninstall) {
@@ -344,17 +265,15 @@ function main() {
       return
     }
 
-    console.log('✓ Installing GLM Quota Plugin...\n')
+    console.log('✓ Installing GLM Quota Plugin (OpenCode v2)...\n')
 
-    // Install integration files
-    installCommand(forceFlag)
-    installSkill(forceFlag)
-    installAgent(forceFlag)
+    // v1 wrote command/agent/skill files that v2 no longer needs
+    removeLegacyV1Files()
     updatePluginConfig()
 
     console.log()
     console.log('✓ Installation complete!')
-    console.log('✓ Restart OpenCode to use /glm_quota command')
+    console.log('✓ Restart OpenCode, then run /glm_quota')
 
   } catch (error) {
     console.error(`\n✗ Installation failed: ${error instanceof Error ? error.message : String(error)}`)

@@ -49,6 +49,7 @@ interface RequestOptions {
   url: string;
   authToken: string;
   queryParams?: string;
+  signal?: AbortSignal;
 }
 
 /**
@@ -281,6 +282,16 @@ function makeRequest(options: RequestOptions): Promise<ApiResponse> {
       });
     });
 
+    // Abort the request when the caller's signal fires (e.g. session stopped)
+    let onAbort: (() => void) | undefined;
+    if (options.signal) {
+      const signal = options.signal;
+      onAbort = (): void => {
+        req.destroy();
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+
     // Set request timeout
     req.setTimeout(REQUEST_TIMEOUT_MS);
 
@@ -292,7 +303,16 @@ function makeRequest(options: RequestOptions): Promise<ApiResponse> {
     });
 
     req.on('error', (error: NetworkError) => {
+      if (onAbort && options.signal) {
+        options.signal.removeEventListener('abort', onAbort);
+      }
       reject(formatNetworkError(error, options.authToken));
+    });
+
+    req.on('close', () => {
+      if (onAbort && options.signal) {
+        options.signal.removeEventListener('abort', onAbort);
+      }
     });
 
     req.end();
@@ -305,16 +325,18 @@ function makeRequest(options: RequestOptions): Promise<ApiResponse> {
  * @param authToken - Authentication token
  * @param endpointKey - Which endpoint to query ('modelUsage' | 'toolUsage' | 'quotaLimit')
  * @param queryParams - Optional query parameters
+ * @param signal - Optional abort signal
  * @returns Promise resolving to API response
  */
 async function queryEndpoint(
   endpoints: Endpoints,
   authToken: string,
   endpointKey: 'modelUsage' | 'toolUsage' | 'quotaLimit',
-  queryParams?: string
+  queryParams?: string,
+  signal?: AbortSignal
 ): Promise<ApiResponse> {
   const url = endpoints[endpointKey];
-  return makeRequest({ url, authToken, queryParams });
+  return makeRequest({ url, authToken, queryParams, signal });
 }
 
 export type { ApiResponse };

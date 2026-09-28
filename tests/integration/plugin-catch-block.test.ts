@@ -1,11 +1,6 @@
 import { describe, test } from 'node:test';
 import * as assert from 'node:assert';
-import { GlmQuotaPlugin } from '../../src/index.js';
-
-type PluginContext = Parameters<typeof GlmQuotaPlugin>[0];
-type ToolExecutor = {
-  execute: (args?: Record<string, unknown>, context?: Record<string, unknown>) => Promise<string> | string;
-};
+import { loadPlugin, runQuotaTool } from '../helpers/load-plugin.js';
 
 describe('Integration: Plugin Error Catch Block', () => {
   describe('Global Error Catch Behavior', () => {
@@ -14,10 +9,6 @@ describe('Integration: Plugin Error Catch Block', () => {
       process.env.ZAI_API_KEY = 'test-token';
 
       try {
-        // Create plugin instance
-        const plugin = await GlmQuotaPlugin({} as unknown as PluginContext);
-        const tool = plugin.tool!.glm_quota;
-
         // Mock Date constructor to throw an error
         const originalDate = global.Date;
 
@@ -31,7 +22,7 @@ describe('Integration: Plugin Error Catch Block', () => {
 
           global.Date = ThrowingDate as unknown as DateConstructor;
 
-          const result = await (tool as unknown as ToolExecutor).execute();
+          const result = await runQuotaTool(await loadPlugin());
 
           assert.ok(result.startsWith('### ⚠️ '), 'Output should start with a Markdown error title');
           assert.ok(!result.includes('╔'), 'Output should not contain box borders');
@@ -48,9 +39,6 @@ describe('Integration: Plugin Error Catch Block', () => {
       process.env.ZAI_API_KEY = 'test-token';
 
       try {
-        const plugin = await GlmQuotaPlugin({} as unknown as PluginContext);
-        const tool = plugin.tool!.glm_quota;
-
         const originalDate = global.Date;
 
         try {
@@ -64,7 +52,7 @@ describe('Integration: Plugin Error Catch Block', () => {
 
           global.Date = ThrowingDate as unknown as DateConstructor;
 
-          const result = await (tool as unknown as ToolExecutor).execute();
+          const result = await runQuotaTool(await loadPlugin());
 
           assert.ok(result.startsWith('### ⚠️ '), 'Output should start with a Markdown error title');
           assert.ok(!result.includes('╚'), 'Output should not contain box borders');
@@ -81,9 +69,6 @@ describe('Integration: Plugin Error Catch Block', () => {
       process.env.ZAI_API_KEY = 'test-token';
 
       try {
-        const plugin = await GlmQuotaPlugin({} as unknown as PluginContext);
-        const tool = plugin.tool!.glm_quota;
-
         const originalDate = global.Date;
 
         try {
@@ -97,7 +82,7 @@ describe('Integration: Plugin Error Catch Block', () => {
 
           global.Date = ThrowingDate as unknown as DateConstructor;
 
-          const result = await (tool as unknown as ToolExecutor).execute();
+          const result = await runQuotaTool(await loadPlugin());
 
           assert.ok(result.startsWith('### ⚠️ '), 'Output should start with a Markdown error title');
           assert.ok(!result.includes('╔'), 'Output should not contain box borders');
@@ -116,9 +101,6 @@ describe('Integration: Plugin Error Catch Block', () => {
       process.env.ZAI_API_KEY = 'test-token';
 
       try {
-        const plugin = await GlmQuotaPlugin({} as unknown as PluginContext);
-        const tool = plugin.tool!.glm_quota;
-
         const originalDate = global.Date;
 
         try {
@@ -131,7 +113,7 @@ describe('Integration: Plugin Error Catch Block', () => {
 
           global.Date = ThrowingDate as unknown as DateConstructor;
 
-          const result = await (tool as unknown as ToolExecutor).execute();
+          const result = await runQuotaTool(await loadPlugin());
 
           assert.ok(result.startsWith('### ⚠️ '), 'Markdown error title should be present');
           assert.ok(result.includes('Test error message'), 'Error description should be present');

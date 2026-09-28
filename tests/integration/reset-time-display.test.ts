@@ -3,15 +3,10 @@ import assert from 'node:assert'
 import { EventEmitter } from 'node:events'
 import type { RequestOptions } from 'node:https'
 import { createRequire, syncBuiltinESMExports } from 'node:module'
-import { GlmQuotaPlugin } from '../../src/index.js'
+import { loadPlugin, runQuotaTool } from '../helpers/load-plugin.js'
 
 const require = createRequire(import.meta.url)
 const https = require('node:https') as typeof import('node:https')
-
-type PluginContext = Parameters<typeof GlmQuotaPlugin>[0]
-type ToolExecutor = {
-  execute: (args?: Record<string, unknown>, context?: Record<string, unknown>) => Promise<string> | string
-}
 
 type MockResponse = {
   statusCode: number
@@ -100,8 +95,7 @@ describe('Reset Time Display Integration', () => {
     }) as typeof https.request
     syncBuiltinESMExports()
 
-    const plugin = await GlmQuotaPlugin({} as unknown as PluginContext)
-    const result = await (plugin.tool!.glm_quota as unknown as ToolExecutor).execute()
+    const result = await runQuotaTool(await loadPlugin())
 
     // Should show countdown + local time: "4h 42m (HH:MM)"
     assert.match(result, /\| ⏱️ 5h Token \| 45\.0% \| `█████░░░░░░░` \| 4h 42m \(\d{2}:\d{2}\) \|/)
@@ -137,8 +131,7 @@ describe('Reset Time Display Integration', () => {
     }) as typeof https.request
     syncBuiltinESMExports()
 
-    const plugin = await GlmQuotaPlugin({} as unknown as PluginContext)
-    const result = await (plugin.tool!.glm_quota as unknown as ToolExecutor).execute()
+    const result = await runQuotaTool(await loadPlugin())
 
     // Should show countdown + day name + local time: "4d 12h (Day HH:MM)"
     assert.match(result, /\| 📅 Weekly \| 52\.0% \| `██████░░░░░░` \| 4d 12h \([A-Z][a-z]{2} \d{2}:\d{2}\) \|/)
@@ -178,8 +171,7 @@ describe('Reset Time Display Integration', () => {
     }) as typeof https.request
     syncBuiltinESMExports()
 
-    const plugin = await GlmQuotaPlugin({} as unknown as PluginContext)
-    const result = await (plugin.tool!.glm_quota as unknown as ToolExecutor).execute()
+    const result = await runQuotaTool(await loadPlugin())
 
     assert.ok(result.includes('| 🔌 MCP (1 Month) | 12.3% | `█░░░░░░░░░░░` | — |'))
   })

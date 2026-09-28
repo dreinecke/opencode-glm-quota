@@ -1,12 +1,19 @@
 /**
- * OpenCode GLM Quota Plugin
- * 
+ * OpenCode GLM Quota Plugin (OpenCode v2)
+ *
  * Query Z.ai GLM Coding Plan usage statistics including quota limits,
  * model usage, and MCP tool usage.
+ *
+ * Registers natively through the v2 plugin API:
+ * - `glm_quota` tool for agent-driven queries
+ * - `/glm_quota` command that reports usage without a model round trip
+ * - `glm-quota` skill so agents know when to check quota
  */
 
-import { type Plugin } from "@opencode-ai/plugin";
-import { tool } from "@opencode-ai/plugin/tool";
+import { Plugin } from "@opencode/plugin";
+import type { Skill } from "@opencode/plugin";
+
+type Context = Plugin.Context;
 import * as fs from "fs";
 import type { Platform } from "./api/platforms.js";
 import { detectPlatform, getPlatformName } from "./api/platforms.js";
@@ -31,13 +38,16 @@ import {
 // CONSTANTS
 // ============================================================================
 
-const CANDIDATE_PROVIDER_IDS = [
+/**
+ * v2 integration IDs that carry Z.ai credentials, in priority order.
+ * `zhipu` is kept last for auth.json files written by OpenCode v1.
+ */
+const CANDIDATE_INTEGRATION_IDS = [
   'zai-coding-plan',
   'zai',
-  'z-ai',
-  'z.ai',
-  'zhipu',
-  'zhipuai'
+  'zhipuai-coding-plan',
+  'zhipuai',
+  'zhipu'
 ] as const;
 
 const DEFAULT_TOKEN_LIMIT = 40000000;
@@ -85,7 +95,20 @@ interface ProcessedQuotaLimit {
 // ============================================================================
 
 /**
- * Extract API key from auth entry
+ * Extract an API key from a resolved v2 credential value
+ * @param credential - Credential resolved by the integration domain
+ * @returns API key or null
+ */
+function extractKeyFromCredential(credential: unknown): string | null {
+  if (typeof credential !== 'object' || credential === null) return null;
+  const value = credential as Record<string, unknown>;
+  if (value.type === 'key' && typeof value.key === 'string') return value.key;
+  if (value.type === 'oauth' && typeof value.access === 'string') return value.access;
+  return null;
+}
+
+/**
+ * Extract API key from an auth.json entry
  * @param entry - Auth entry (string or object)
  * @returns API key or null
  */
@@ -93,7 +116,7 @@ function extractKeyFromEntry(entry: unknown): string | null {
   if (typeof entry === 'string') return entry;
   if (typeof entry === 'object' && entry !== null) {
     const obj = entry as Record<string, unknown>;
-    for (const keyName of ['apiKey', 'api_key', 'token', 'key', 'accessToken', 'auth_token']) {
+    for (const keyName of ['key', 'apiKey', 'api_key', 'token', 'accessToken', 'auth_token']) {
       if (typeof obj[keyName] === 'string') return obj[keyName] as string;
     }
   }
@@ -101,11 +124,38 @@ function extractKeyFromEntry(entry: unknown): string | null {
 }
 
 /**
+ * Get credentials from OpenCode v2 integrations
+ * @param ctx - Plugin context
+ * @returns Credentials or null if not found
+ */
+async function getCredentialsFromIntegrations(ctx: Context): Promise<Credentials | null> {
+  for (const integrationId of CANDIDATE_INTEGRATION_IDS) {
+    try {
+      const connection = await ctx.integration.connection.active(integrationId);
+      if (!connection) continue;
+
+      const credential = await ctx.integration.connection.resolve(connection);
+      const token = extractKeyFromCredential(credential);
+      if (!token) continue;
+
+      const platform = detectPlatform(integrationId);
+      if (platform) {
+        return { token, platform };
+      }
+    } catch {
+      // Silent fail, try next integration
+    }
+  }
+
+  return null;
+}
+
+/**
  * Get credentials from OpenCode auth.json or environment variables
  * @returns Credentials or null if not found
  */
-async function getCredentials(): Promise<Credentials | null> {
-  // Priority 1: OpenCode auth.json — probe EVERY candidate path (legacy
+async function getCredentialsFromFilesystem(): Promise<Credentials | null> {
+  // OpenCode auth.json — probe EVERY candidate path (legacy
   // LOCALAPPDATA on Windows, then the cross-platform XDG path) so a stale or
   // partial file at one location does not mask valid credentials at another.
   for (const authPath of getAuthFilePathCandidates()) {
@@ -114,7 +164,7 @@ async function getCredentials(): Promise<Credentials | null> {
       const content = fs.readFileSync(authPath, 'utf-8');
       const authData = JSON.parse(content) as Record<string, unknown>;
 
-      for (const providerId of CANDIDATE_PROVIDER_IDS) {
+      for (const providerId of CANDIDATE_INTEGRATION_IDS) {
         const entry = authData[providerId];
         if (entry) {
           const token = extractKeyFromEntry(entry);
@@ -131,11 +181,11 @@ async function getCredentials(): Promise<Credentials | null> {
     }
   }
 
-  // Priority 2: Environment variables (for development/testing)
+  // Environment variables (for development/testing)
   if (process.env.ZAI_API_KEY) {
     return { token: process.env.ZAI_API_KEY, platform: 'ZAI' };
   }
-  
+
   if (process.env.ZHIPU_API_KEY || process.env.ZHIPUAI_API_KEY) {
     return {
       token: (process.env.ZHIPU_API_KEY || process.env.ZHIPUAI_API_KEY)!,
@@ -144,6 +194,19 @@ async function getCredentials(): Promise<Credentials | null> {
   }
 
   return null;
+}
+
+/**
+ * Get credentials with priority order:
+ * 1. OpenCode v2 integrations (active connection)
+ * 2. OpenCode auth.json
+ * 3. Environment variables
+ * @param ctx - Plugin context
+ * @returns Credentials or null if not found
+ */
+async function getCredentials(ctx: Context): Promise<Credentials | null> {
+  return (await getCredentialsFromIntegrations(ctx))
+    ?? (await getCredentialsFromFilesystem());
 }
 
 /**
@@ -157,7 +220,7 @@ function createCredentialError(): string {
     'Please authenticate first.',
     [
       'Run `/connect` command in OpenCode TUI.',
-      'Select "Z.AI Coding Plan", "Z.AI", or "Zhipu".',
+      'Select "Z.AI Coding Plan", "Z.AI", "Zhipu AI", or "Zhipu AI Coding Plan".',
       'For development/testing, set `ZAI_API_KEY` or `ZHIPU_API_KEY`.'
     ]
   );
@@ -251,9 +314,6 @@ function getTokenLimitInfo(quotaData: ProcessedQuotaLimit | null): { tokenLimit:
   return { tokenLimit, tokenPct };
 }
 
-/**
- * Format MCP tool details as readable lines
- */
 function asNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
@@ -481,69 +541,111 @@ function formatMarkdownOutput(
 /**
  * Query all usage statistics
  * @param credentials - API credentials
+ * @param signal - Optional abort signal from the tool executor
  * @returns Formatted output string
  */
-async function queryAllUsage(credentials: Credentials): Promise<string> {
+async function queryAllUsage(credentials: Credentials, signal?: AbortSignal): Promise<string> {
   const { token, platform } = credentials;
   const endpoints = getEndpoints(platform);
   const { startTime, endTime } = getTimeWindow();
   const queryParams = getTimeWindowQueryParams();
-  
+
   // Query all endpoints
   const [quotaResponse, modelResponse, toolResponse] = await Promise.all([
-    queryEndpoint(endpoints, token, 'quotaLimit').catch(() => null),
-    queryEndpoint(endpoints, token, 'modelUsage', queryParams).catch(() => null),
-    queryEndpoint(endpoints, token, 'toolUsage', queryParams).catch(() => null)
+    queryEndpoint(endpoints, token, 'quotaLimit', undefined, signal).catch(() => null),
+    queryEndpoint(endpoints, token, 'modelUsage', queryParams, signal).catch(() => null),
+    queryEndpoint(endpoints, token, 'toolUsage', queryParams, signal).catch(() => null)
   ]);
-  
+
   // Process responses
-  const quotaData = quotaResponse 
-    ? processQuotaLimit(quotaResponse.data as Record<string, unknown>) 
+  const quotaData = quotaResponse
+    ? processQuotaLimit(quotaResponse.data as Record<string, unknown>)
     : null;
-  
-  const modelData = modelResponse 
-    ? (modelResponse.data || modelResponse) as Record<string, unknown> 
+
+  const modelData = modelResponse
+    ? (modelResponse.data || modelResponse) as Record<string, unknown>
     : null;
-  
-  const toolData = toolResponse 
-    ? (toolResponse.data || toolResponse) as Record<string, unknown> 
+
+  const toolData = toolResponse
+    ? (toolResponse.data || toolResponse) as Record<string, unknown>
     : null;
-  
+
   return formatMarkdownOutput(platform, startTime, endTime, quotaData, modelData, toolData);
 }
 
-// ============================================================================
-// PLUGIN EXPPORT
-// ============================================================================
+/**
+ * Run the quota query and return a Markdown report or a Markdown error.
+ * Shared by the tool executor and the /glm_quota command.
+ * @param ctx - Plugin context used for credential discovery
+ * @param signal - Optional abort signal from the tool executor
+ * @returns Markdown report
+ */
+async function runQuotaReport(ctx: Context, signal?: AbortSignal): Promise<string> {
+  try {
+    const credentials = await getCredentials(ctx);
 
-export const GlmQuotaPlugin: Plugin = async () => {
-  return {
-    tool: {
-      glm_quota: tool({
-        description: 'Query Z.ai GLM Coding Plan usage statistics including quota limits, model usage, and MCP tool usage',
-        args: {},
-        async execute() {
-          try {
-            const credentials = await getCredentials();
-            
-            if (!credentials) {
-              return createCredentialError();
-            }
-            
-            return await queryAllUsage(credentials);
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-
-            if (errorMessage.trim().startsWith('### ⚠️ ')) {
-              return errorMessage;
-            }
-
-            return createMarkdownError('Error', {}, errorMessage);
-          }
-        }
-      })
+    if (!credentials) {
+      return createCredentialError();
     }
-  }
-};
 
-export default GlmQuotaPlugin;
+    return await queryAllUsage(credentials, signal);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    if (errorMessage.trim().startsWith('### ⚠️ ')) {
+      return errorMessage;
+    }
+
+    return createMarkdownError('Error', {}, errorMessage);
+  }
+}
+
+// ============================================================================
+// PLUGIN EXPORT (OpenCode v2)
+// ============================================================================
+
+export default Plugin.define({
+  id: 'glm-quota',
+  async setup(ctx) {
+    await ctx.tool.transform((editor) => {
+      editor.add({
+        name: 'glm_quota',
+        description: 'Query Z.ai GLM Coding Plan usage statistics including quota limits, model usage, and MCP tool usage',
+        input: {
+          type: 'object',
+          properties: {},
+          additionalProperties: false
+        },
+        async execute(_input, context) {
+          return { content: await runQuotaReport(ctx, context.signal) };
+        }
+      });
+    });
+
+    await ctx.command.transform((editor) => {
+      editor.add({
+        name: 'glm_quota',
+        description: 'Show Z.ai GLM Coding Plan usage and quota statistics',
+        async execute({ sessionID }) {
+          const report = await runQuotaReport(ctx);
+          await ctx.session.synthetic({ sessionID, text: report });
+        }
+      });
+    });
+
+    await ctx.skill.transform((editor) => {
+      editor.add({
+        id: 'glm-quota',
+        name: 'glm-quota',
+        description: 'Query Z.ai GLM Coding Plan usage statistics including quota limits, model usage, and MCP tool usage',
+        path: new URL('./index.js', import.meta.url).pathname,
+        content: [
+          'Use the `glm_quota` tool to check Z.ai GLM Coding Plan usage.',
+          '',
+          'The tool returns a Markdown report with quota limits, model usage,',
+          'and MCP tool usage. Return the report to the user verbatim.'
+        ].join('\n')
+      } as Skill.Info);
+    });
+  }
+});
