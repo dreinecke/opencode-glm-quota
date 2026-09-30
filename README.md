@@ -73,7 +73,7 @@ npm install github:guyinwonder168/opencode-glm-quota
 git clone https://github.com/guyinwonder168/opencode-glm-quota.git
 cd opencode-glm-quota
 npm install
-npm run build
+npm run compile
 
 # Link for local testing
 npm link
@@ -241,7 +241,7 @@ Content-Type: application/json
 
 ```bash
 # Build TypeScript to JavaScript
-npm run build
+npm run compile
 
 # Clean build artifacts
 npm run clean

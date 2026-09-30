@@ -16,9 +16,9 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
+    "compile": "tsc",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run clean && npm run build",
+    "prepublishOnly": "npm run clean && npm run compile",
     "test": "tsx --test $(find tests -name '*.test.ts' -type f)",
     "test:coverage": "c8 --reporter=lcov --reporter=text -- npm test",
     "lint": "eslint src/"

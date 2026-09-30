@@ -11,7 +11,9 @@ yarn-error.log*
 pnpm-debug.log*
 
 # Build output
-dist/
+# dist/ is committed on purpose: OpenCode v2 installs a plugin from GitHub with npm's
+# install scripts turned off, so nothing would build it. Rebuild and commit it with
+# every change to src/ (`npm ci && npm run compile`).
 build/
 out/
 *.tsbuildinfo

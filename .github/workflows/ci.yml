@@ -36,7 +36,7 @@ jobs:
         run: npm run lint
 
       - name: Build TypeScript
-        run: npm run build
+        run: npm run compile
 
       - name: Run tests with coverage
         run: npm run test:coverage

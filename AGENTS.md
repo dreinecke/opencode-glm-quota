@@ -27,9 +27,16 @@ git config user.email "227569314+guyinwonder168@users.noreply.github.com"
 
 ## Build & Development Commands
 
+> **The script is `compile`, not `build`, and `dist/` is committed.** OpenCode v2 installs a plugin
+> from GitHub through npm with install scripts turned off. npm still tries to "prepare" any git
+> dependency whose package.json has a `build`, `prepare`, `prepack` or install-type script, and that
+> preparation fails inside OpenCode ("git dep preparation failed"). With no such script and the built
+> output in git, `opencode plugin add github:dreinecke/opencode-glm-quota` installs and loads as is.
+> Rebuild and commit `dist/` with every change to `src/`.
+
 ```bash
 # Build TypeScript to JavaScript
-npm run build
+npm run compile
 
 # Clean build artifacts
 npm run clean
@@ -63,7 +70,7 @@ This project uses GitHub Actions for automated CI/CD.
 **What It Does:**
 - Tests code on multiple Node.js versions (18.x, 20.x, 22.x)
 - Runs linting (`npm run lint`)
-- Builds TypeScript (`npm run build`)
+- Builds TypeScript (`npm run compile`)
 - Runs all tests (`npm test`)
 - Validates documentation links
 - Uploads test coverage artifacts
@@ -391,7 +398,7 @@ Rules:
 # TDD cycle commands
 npm run test -- path/to/test.test.ts   # Run specific test (RED check)
 npm run test                            # Run all tests (GREEN verification)
-npm run build                           # Ensure compiles
+npm run compile                           # Ensure compiles
 ```
 
 **Reference:**
@@ -674,7 +681,7 @@ This error occurs when a non-plugin export is called and returns something other
 
 **Local Testing:**
 Always run these before pushing:
-1. `npm run build` - Ensure TypeScript compiles without errors
+1. `npm run compile` - Ensure TypeScript compiles without errors
 2. `npm run lint` - Check for linting issues
 3. `npm run test` - Verify all tests pass
 4. Manual test: `/glm_quota` command in OpenCode

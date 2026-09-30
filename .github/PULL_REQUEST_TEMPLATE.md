@@ -63,7 +63,7 @@ Describe how you tested this change:
 - [ ] All tests pass locally: `npm run test`
 - [ ] Test coverage meets 85% threshold
 - [ ] No new lint warnings: `npm run lint`
-- [ ] Build succeeds: `npm run build`
+- [ ] Build succeeds: `npm run compile`
 
 ### Manual Testing
 

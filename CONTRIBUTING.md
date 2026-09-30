@@ -45,7 +45,7 @@ npm install
 3. **Build the project**
 
 ```bash
-npm run build
+npm run compile
 ```
 
 4. **Run tests**
@@ -58,7 +58,7 @@ npm run test
 
 ```bash
 # Build on file changes (if using watch mode)
-npm run build
+npm run compile
 ```
 
 ## Making Changes
@@ -309,7 +309,7 @@ const result = doSomething();
 1. **Update documentation** - Update README, CHANGELOG.md, or inline comments
 2. **Add tests** - Ensure tests pass (85% coverage threshold)
 3. **Run linter** - Ensure code passes linting (`npm run lint`)
-4. **Build** - Ensure project builds successfully (`npm run build`)
+4. **Build** - Ensure project builds successfully (`npm run compile`)
 5. **Create PR** - Submit pull request to `main` branch
 
 ### Pull Request Template
